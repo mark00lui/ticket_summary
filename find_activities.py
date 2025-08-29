@@ -229,10 +229,22 @@ class ActivityScanner:
             if ticket_id:
                 ticket_info['id'] = ticket_id
             
-            # 提取標題 - 嘗試多種方法
-            title_element = ticket_element.find(['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'a', 'span', 'div'])
+            # 提取標題 - 優先尋找 data-test-link 屬性
+            title_element = ticket_element.find('a', attrs={'data-test-link': True})
             if title_element:
-                ticket_info['title'] = title_element.get_text(strip=True)
+                # 提取 data-test-link 下的文字內容，但不包含 span 內的內容
+                title_text = ""
+                for content in title_element.contents:
+                    if content.name is None:  # 文字節點
+                        title_text += content.strip() + " "
+                    elif content.name != 'span':  # 不是 span 標籤的其他元素
+                        title_text += content.get_text(strip=True) + " "
+                ticket_info['title'] = title_text.strip()
+            else:
+                # 如果沒有找到 data-test-link，嘗試其他方法
+                title_element = ticket_element.find(['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'a', 'span', 'div'])
+                if title_element:
+                    ticket_info['title'] = title_element.get_text(strip=True)
             
             # 提取日期 - 改進的日期提取
             date_patterns = [
