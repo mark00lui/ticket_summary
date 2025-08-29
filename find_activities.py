@@ -858,6 +858,23 @@ def main():
         print("❌ 帳號或密碼不能為空")
         return
     
+    # 檢查 Gemini API Key
+    gemini_api_key = os.getenv('GEMINI_API_KEY', '')
+    if len(gemini_api_key) < 1:
+        print("\n🤖 Gemini API Key 未設定")
+        print("💡 為了生成 AI 周報，請輸入您的 Gemini API Key")
+        print("💡 如果沒有 API Key，請前往 https://makersuite.google.com/app/apikey 申請")
+        print("💡 如果不想使用 AI 功能，請直接按 Enter 跳過")
+        
+        gemini_api_key = getpass.getpass("請輸入 Gemini API Key (或按 Enter 跳過): ").strip()
+        
+        if gemini_api_key:
+            # 設定環境變數
+            os.environ['GEMINI_API_KEY'] = gemini_api_key
+            print("✅ Gemini API Key 已設定")
+        else:
+            print("⚠️  跳過 Gemini 功能，將只生成基本報告")
+    
     # 設定掃描參數
     days_back = 10
     max_tickets = 50
@@ -865,6 +882,10 @@ def main():
     print(f"\n📋 掃描設定:")
     print(f"   掃描範圍: 過去 {days_back} 天")
     print(f"   最大掃描數量: {max_tickets} 個 tickets")
+    if gemini_api_key:
+        print(f"   🤖 AI 周報: 已啟用")
+    else:
+        print(f"   🤖 AI 周報: 已停用")
     
     # 確認開始
     confirm = input("\n是否開始掃描？(y/n): ").strip().lower()
