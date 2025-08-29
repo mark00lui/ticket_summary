@@ -20,6 +20,7 @@ from bs4 import BeautifulSoup
 import config
 import getpass
 import os
+import glob
 
 # 設定日誌
 logging.basicConfig(level=logging.INFO)
@@ -677,6 +678,9 @@ class ActivityScanner:
                     'activities': activities
                 }, f, ensure_ascii=False, indent=2)
             
+            # 嘗試生成 Gemini 周報
+            self._generate_gemini_report(json_file, report_dir)
+            
             # 生成 CSV 報告
             csv_file = f"{report_dir}/eservice_activities_{timestamp}.csv"
             with open(csv_file, 'w', newline='', encoding='utf-8') as f:
@@ -796,9 +800,50 @@ class ActivityScanner:
             print(f"   💬 互動 CSV: {interactions_csv_file}")
             print(f"   🔗 Jira 連結 CSV: {jira_links_csv_file}")
             print(f"   📝 Markdown: {md_file}")
+            print(f"   🤖 Gemini 周報: 請查看 reports 目錄中的 weekly_report_*.html 文件")
             
         except Exception as e:
             logger.error(f"生成報告失敗: {e}")
+    
+    def _generate_gemini_report(self, json_file, report_dir):
+        """使用 Gemini 生成周報"""
+        try:
+            # 檢查是否有 Gemini API Key
+            gemini_api_key = os.getenv('GEMINI_API_KEY')
+            if not gemini_api_key:
+                print("⚠️  未設定 GEMINI_API_KEY 環境變數，跳過 Gemini 周報生成")
+                print("💡 請設定環境變數: set GEMINI_API_KEY=your_api_key")
+                return
+            
+            # 導入 Gemini 服務
+            try:
+                from gemini_service import GeminiService
+            except ImportError:
+                print("⚠️  未安裝 google-generativeai 套件，跳過 Gemini 周報生成")
+                print("💡 請執行: pip install google-generativeai")
+                return
+            
+            # 初始化 Gemini 服務
+            try:
+                gemini_service = GeminiService(gemini_api_key)
+                
+                # 測試連接
+                if not gemini_service.test_connection():
+                    print("❌ Gemini API 連接失敗，跳過周報生成")
+                    return
+                
+                # 生成周報
+                html_file = gemini_service.generate_weekly_report(json_file, report_dir)
+                if html_file:
+                    print(f"   🤖 Gemini 周報: {html_file}")
+                
+            except Exception as e:
+                logger.error(f"Gemini 周報生成失敗: {e}")
+                print(f"❌ Gemini 周報生成失敗: {e}")
+                
+        except Exception as e:
+            logger.error(f"Gemini 服務初始化失敗: {e}")
+            print(f"❌ Gemini 服務初始化失敗: {e}")
 
 def main():
     """主函數"""
