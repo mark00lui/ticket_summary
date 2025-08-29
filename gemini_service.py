@@ -255,13 +255,15 @@ class GeminiService:
 數據包含：
 - 活動數量：{data.get('total_activities', 0)} 個
 - 掃描範圍：過去 {data.get('scan_days', 0)} 天
+- FAE kh or kh.lui
+- Cusromer 其他人
 
 要求：
 0. 分析activities的內容, /a/tickets/XXXXXX , 其中XXXXXX為Ticket ID, 它的json內層有關連的文字內容以及Jira號
 1. 提取所有 Jira 號碼 (https://ticket.quectel.com/browse/FAE-XXXXXX 格式), FAE-XXXXXX 是Jira號
-2. 因為是weekly report, 所以只取最近7天的數據
+2. 因為是weekly report, 選擇最近8天內的所有相關數據
 3. 分析回應重點，突出 FAE 的專業能力
-4. 生成美觀的 HTML 表格，包含：Ticket ID、Jira號碼、標題、狀態(Closed, Pending, Waiting on Third Party)、客戶與我們的問答重點
+4. 生成美觀的 HTML 表格，包含：Ticket ID、Jira號碼、標題、狀態(Closed, Pending, Waiting on Third Party)、客戶與我們的問答重點，Customer一問，FAE一答，都在同一個格子內
 5. 只輸出 HTML 表格，不要其他內容
 6. 使用美觀的 CSS 樣式
 
