@@ -440,6 +440,63 @@ class ActivityScanner:
                 logger.warning(f"頁面載入超時: {ticket_info['full_url']}")
                 return []
             
+            # 尋找並點擊 "load-more" 按鈕以顯示所有內容
+            try:
+                print(f"  🔍 尋找 load-more 按鈕...")
+                
+                # 使用唯一的選擇器來找到 load-more 按鈕
+                try:
+                    # 等待按鈕出現
+                    load_more_button = self.wait.until(
+                        EC.element_to_be_clickable((By.CSS_SELECTOR, 'button[data-test-button="load-more"]'))
+                    )
+                    print(f"  ✅ 找到 load-more 按鈕")
+                except TimeoutException:
+                    load_more_button = None
+                
+                if load_more_button:
+                    # 滾動到按鈕位置
+                    self.driver.execute_script("arguments[0].scrollIntoView(true);", load_more_button)
+                    time.sleep(1)
+                    
+                    # 點擊按鈕
+                    print(f"  🔘 點擊 load-more 按鈕...")
+                    load_more_button.click()
+                    
+                    # 等待內容載入
+                    print(f"  ⏳ 等待內容載入...")
+                    time.sleep(3)
+                    
+                    # 檢查是否還有更多按鈕需要點擊
+                    max_clicks = 5  # 最多點擊5次，避免無限循環
+                    click_count = 1
+                    
+                    while click_count < max_clicks:
+                        try:
+                            # 再次尋找 load-more 按鈕
+                            next_button = self.driver.find_element(By.CSS_SELECTOR, 'button[data-test-button="load-more"]')
+                            if next_button.is_displayed():
+                                print(f"  🔘 點擊第 {click_count + 1} 個 load-more 按鈕...")
+                                self.driver.execute_script("arguments[0].scrollIntoView(true);", next_button)
+                                time.sleep(1)
+                                next_button.click()
+                                time.sleep(3)
+                                click_count += 1
+                            else:
+                                break
+                        except:
+                            # 沒有找到更多按鈕，跳出循環
+                            break
+                    
+                    print(f"  ✅ 總共點擊了 {click_count} 次 load-more 按鈕")
+                else:
+                    print(f"  ⚠️  未找到 load-more 按鈕，可能所有內容都已顯示")
+                    
+            except Exception as e:
+                logger.warning(f"處理 load-more 按鈕時發生錯誤: {e}")
+                print(f"  ⚠️  處理 load-more 按鈕失敗: {e}")
+                # 繼續執行，即使沒有點擊 load-more 按鈕
+            
             # 解析頁面內容
             page_source = self.driver.page_source
             soup = BeautifulSoup(page_source, 'html.parser')
