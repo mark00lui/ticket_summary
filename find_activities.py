@@ -187,7 +187,7 @@ class ActivityScanner:
                 print("⚠️  使用通用方法尋找 ticket...")
                 
                 # 尋找包含日期的行
-                date_patterns = ['2024', '2023', '2025', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+                date_patterns = ['2024', '2023', '2025', '2026', '2027', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
                 
                 for pattern in date_patterns:
                     elements = soup.find_all(text=lambda text: text and pattern in text)
@@ -509,6 +509,10 @@ class ActivityScanner:
                 print(f"  ⚠️  處理 load-more 按鈕失敗: {e}")
                 # 繼續執行，即使沒有點擊 load-more 按鈕
             
+            # 等待內容載入
+            print(f"  ⏳ 等待內容載入...")
+            time.sleep(3)
+
             # 解析頁面內容
             page_source = self.driver.page_source
             soup = BeautifulSoup(page_source, 'html.parser')
