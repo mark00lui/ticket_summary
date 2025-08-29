@@ -32,7 +32,7 @@ class GeminiService:
             logger.error(f"Gemini 模型初始化失敗: {e}")
             raise
     
-    def generate_weekly_report(self, json_file_path, output_dir="./reports"):
+    def generate_weekly_report(self, json_file_path, output_dir="./reports", fae_name="FAE"):
         """生成周報"""
         try:
             print("🤖 正在使用 Gemini 生成周報...")
@@ -46,7 +46,7 @@ class GeminiService:
             optimized_data = data
             
             # 構建 prompt
-            prompt = self._build_prompt(optimized_data)
+            prompt = self._build_prompt(optimized_data, fae_name)
             
             print(f"📊 發送數據大小: {len(prompt)} 字符")
             
@@ -88,7 +88,7 @@ class GeminiService:
                 print(f"❌ Gemini API 調用失敗: {api_error}")
                 
                 # 嘗試使用簡化版本
-                return self._generate_simple_report(optimized_data, output_dir)
+                return self._generate_simple_report(optimized_data, output_dir, fae_name)
                 
         except Exception as e:
             logger.error(f"生成周報失敗: {e}")
@@ -138,7 +138,7 @@ class GeminiService:
             logger.error(f"優化數據失敗: {e}")
             return data
     
-    def _generate_simple_report(self, data, output_dir):
+    def _generate_simple_report(self, data, output_dir, fae_name="FAE"):
         """生成簡化的 HTML 報告（當 Gemini API 失敗時使用）"""
         try:
             print("🔄 使用簡化模式生成報告...")
@@ -147,8 +147,7 @@ class GeminiService:
             html_file = f"{output_dir}/weekly_report_simple_{timestamp}.html"
             
             # 生成簡單的 HTML 表格
-            # html_content = self._create_simple_html_table(data)
-            html_content = data
+            html_content = self._create_simple_html_table(data, fae_name)
             
             # 保存文件
             with open(html_file, 'w', encoding='utf-8') as f:
@@ -161,7 +160,7 @@ class GeminiService:
             logger.error(f"生成簡化報告失敗: {e}")
             return None
     
-    def _create_simple_html_table(self, data):
+    def _create_simple_html_table(self, data, fae_name="FAE"):
         """創建簡單的 HTML 表格"""
         report_date = data.get('report_date', '')
         scan_days = data.get('scan_days', 0)
@@ -171,7 +170,7 @@ class GeminiService:
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>FAE 周報</title>
+    <title>{fae_name} 周報</title>
     <style>
         body {{ font-family: Arial, sans-serif; margin: 20px; }}
         table {{ border-collapse: collapse; width: 100%; margin-top: 20px; }}
@@ -184,7 +183,7 @@ class GeminiService:
     </style>
 </head>
 <body>
-    <h1>FAE 周報</h1>
+    <h1>{fae_name} 周報</h1>
     <p><strong>生成時間:</strong> {report_date}</p>
     <p><strong>掃描範圍:</strong> 過去 {scan_days} 天</p>
     <p><strong>活動數量:</strong> {total_activities} 個</p>
@@ -236,34 +235,33 @@ class GeminiService:
         </tbody>
     </table>
     
-    <p><em>此報告由系統自動生成，突出 FAE 的專業能力和解決問題的決心。</em></p>
+    <p><em>此報告由系統自動生成，突出 {fae_name} 的專業能力和解決問題的決心。</em></p>
 </body>
 </html>
 """
         
         return html
     
-    def _build_prompt(self, data):
+    def _build_prompt(self, data, fae_name="FAE"):
         """構建發送給 Gemini 的 prompt"""
         
         # 將數據轉換為 JSON 字符串
         json_data = json.dumps(data, ensure_ascii=False, indent=2)
         
         prompt = f"""
-請分析以下 FAE 活動數據並生成 HTML 表格格式的周報。
+請分析以下 {fae_name} 活動數據並生成 HTML 表格格式的周報。
 
 數據包含：
 - 活動數量：{data.get('total_activities', 0)} 個
 - 掃描範圍：過去 {data.get('scan_days', 0)} 天
-- FAE kh or kh.lui
-- Cusromer 其他人
+- FAE：{fae_name}
 
 要求：
 0. 分析activities的內容, /a/tickets/XXXXXX , 其中XXXXXX為Ticket ID, 它的json內層有關連的文字內容以及Jira號
-1. 提取所有 Jira 號碼 (https://ticket.quectel.com/browse/FAE-XXXXXX 格式), FAE-XXXXXX 是Jira號
+1. 提取所有 Jira 號碼 (https://ticket.quectel.com/browse/FAE-XXXXXX), FAE-XXXXXX 是Jira號
 2. 因為是weekly report, 選擇最近8天內的所有相關數據
-3. 分析回應重點，突出 FAE 的專業能力
-4. 生成美觀的 HTML 表格，包含：Ticket ID、Jira號碼、標題、狀態(Closed, Pending, Waiting on Third Party)、客戶與我們的問答重點，Customer一問，FAE一答，都在同一個格子內
+3. 分析回應重點，突出 {fae_name} 的專業能力
+4. 生成美觀的 HTML 表格，包含：Ticket ID、Jira號碼、標題、狀態(Closed, Pending, Waiting on Third Party)、客戶與我們的問答重點，Customer一問，{fae_name}一答，都在同一個格子內
 5. 只輸出 HTML 表格，不要其他內容
 6. 使用美觀的 CSS 樣式
 

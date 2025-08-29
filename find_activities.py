@@ -646,7 +646,7 @@ class ActivityScanner:
             print(f"   最近 {days_back} 天活動: {len(recent_activities)} 個")
             
             # 生成報告
-            self.generate_report(recent_activities, days_back)
+            self.generate_report(recent_activities, days_back, username)
             
             return True
             
@@ -657,7 +657,7 @@ class ActivityScanner:
         finally:
             self.close_driver()
     
-    def generate_report(self, activities, days_back):
+    def generate_report(self, activities, days_back, username):
         """生成報告"""
         try:
             print(f"\n📝 生成報告...")
@@ -679,7 +679,7 @@ class ActivityScanner:
                 }, f, ensure_ascii=False, indent=2)
             
             # 嘗試生成 Gemini 周報
-            self._generate_gemini_report(json_file, report_dir)
+            self._generate_gemini_report(json_file, report_dir, username)
             
             # 生成 CSV 報告
             csv_file = f"{report_dir}/eservice_activities_{timestamp}.csv"
@@ -805,7 +805,7 @@ class ActivityScanner:
         except Exception as e:
             logger.error(f"生成報告失敗: {e}")
     
-    def _generate_gemini_report(self, json_file, report_dir):
+    def _generate_gemini_report(self, json_file, report_dir, username):
         """使用 Gemini 生成周報"""
         try:
             # 檢查是否有 Gemini API Key
@@ -833,7 +833,7 @@ class ActivityScanner:
                     return
                 
                 # 生成周報
-                html_file = gemini_service.generate_weekly_report(json_file, report_dir)
+                html_file = gemini_service.generate_weekly_report(json_file, report_dir, username)
                 if html_file:
                     print(f"   🤖 Gemini 周報: {html_file}")
                 
