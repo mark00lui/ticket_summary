@@ -329,6 +329,96 @@ class ActivityScanner:
             logger.warning(f"檢查日期失敗: {e}")
             return False
     
+    def extract_conversation_content(self, conversation_element):
+        """提取對話內容區域的所有文字"""
+        try:
+            if not conversation_element:
+                return ""
+            
+            # 使用樹狀遍歷方法提取所有文字內容
+            text_content = ""
+            
+            # 遍歷所有子元素和文字節點
+            for element in conversation_element.descendants:
+                if element.name is None:  # 文字節點
+                    text = element.strip()
+                    if text:
+                        text_content += text + " "
+                elif element.name in ['br']:  # 換行標籤
+                    text_content += "\n"
+                elif element.name in ['p', 'div'] and element.get_text(strip=True):
+                    # 對於段落和 div，添加額外的換行
+                    text_content += "\n"
+            
+            # 清理多餘的空白字符，但保留換行
+            lines = text_content.split('\n')
+            cleaned_lines = []
+            for line in lines:
+                cleaned_line = ' '.join(line.split())
+                if cleaned_line:
+                    cleaned_lines.append(cleaned_line)
+            
+            return '\n'.join(cleaned_lines)
+            
+        except Exception as e:
+            logger.warning(f"提取對話內容失敗: {e}")
+            return conversation_element.get_text(strip=True) if conversation_element else ""
+    
+    def extract_ltr_content(self, ltr_div):
+        """提取 <div dir="ltr"> 標籤內的完整文字內容"""
+        try:
+            if not ltr_div:
+                return ""
+            
+            # 獲取所有文字內容，包括嵌套的 div 和 span
+            text_content = ""
+            
+            # 遍歷所有子元素
+            for element in ltr_div.descendants:
+                if element.name is None:  # 文字節點
+                    text = element.strip()
+                    if text:
+                        text_content += text + " "
+                elif element.name in ['br']:  # 換行標籤
+                    text_content += "\n"
+            
+            # 清理多餘的空白字符
+            text_content = ' '.join(text_content.split())
+            return text_content
+            
+        except Exception as e:
+            logger.warning(f"提取 LTR 內容失敗: {e}")
+            return ltr_div.get_text(strip=True) if ltr_div else ""
+    
+    def extract_jira_links(self, text_content):
+        """提取 Jira 連結中的有意義內容"""
+        try:
+            import re
+            jira_info = []
+            
+            # 尋找 Jira 連結模式
+            jira_patterns = [
+                r'https://ticket\.quectel\.com/browse/([A-Z]+-\d+)',  # 完整 URL
+                r'#([A-Z]+-\d+)',  # 題號格式
+                r'([A-Z]+-\d+)'    # 一般題號
+            ]
+            
+            for pattern in jira_patterns:
+                matches = re.findall(pattern, text_content)
+                for match in matches:
+                    if match not in [info['ticket_id'] for info in jira_info]:
+                        jira_info.append({
+                            'ticket_id': match,
+                            'full_url': f"https://ticket.quectel.com/browse/{match}",
+                            'context': text_content[:200] + "..." if len(text_content) > 200 else text_content
+                        })
+            
+            return jira_info
+            
+        except Exception as e:
+            logger.warning(f"提取 Jira 連結失敗: {e}")
+            return []
+    
     def get_ticket_detailed_interactions(self, ticket_info):
         """獲取 ticket 的詳細互動內容"""
         try:
@@ -355,104 +445,89 @@ class ActivityScanner:
             
             interactions = []
             
-            # 直接尋找 <div dir="ltr"> 標籤，這些包含實際的回應訊息
-            ltr_divs = soup.find_all('div', attrs={'dir': 'ltr'})
-            print(f"  📝 找到 {len(ltr_divs)} 個 <div dir='ltr'> 標籤")
+            # 使用新的策略：尋找對話內容容器
+            conversation_containers = soup.find_all('div', class_='ticket-details__conversation__content')
+            print(f"  📝 找到 {len(conversation_containers)} 個對話內容容器")
             
-            # 尋找互動內容的常見選擇器作為容器
-            interaction_selectors = [
-                '.conversation', '.conversations', '.messages', '.message',
-                '.activity', '.activities', '.timeline', '.feed',
-                '.comment', '.comments', '.reply', '.replies',
-                '.thread', '.thread-item', '.conversation-item',
-                '.ticket-conversation', '.ticket-messages'
-            ]
+            # 如果沒有找到對話容器，嘗試其他選擇器
+            if not conversation_containers:
+                conversation_containers = soup.find_all('div', attrs={'data-test-id': 'conversation-content'})
+                print(f"  📝 使用 data-test-id 找到 {len(conversation_containers)} 個對話內容容器")
             
-            found_interactions = []
-            for selector in interaction_selectors:
-                elements = soup.select(selector)
-                if elements:
-                    found_interactions.extend(elements)
-                    break
+            # 如果還是沒有找到，嘗試更通用的方法
+            if not conversation_containers:
+                conversation_containers = soup.find_all('div', class_='conversation-content')
+                print(f"  📝 使用通用選擇器找到 {len(conversation_containers)} 個對話內容容器")
             
-            # 如果沒有找到，嘗試更通用的方法
-            if not found_interactions:
-                # 尋找包含時間戳的元素
-                time_patterns = ['ago', '前', 'hours', 'days', 'minutes', '小時', '天', '分鐘']
-                for pattern in time_patterns:
-                    time_elements = soup.find_all(string=lambda text: text and pattern in text)
-                    if time_elements:
-                        for time_element in time_elements:
-                            parent = time_element.parent
-                            if parent and parent.name in ['div', 'span', 'p', 'li']:
-                                found_interactions.append(parent)
-            
-            # 提取互動信息
-            for interaction in found_interactions[:10]:  # 限制為前10個互動
+            # 處理每個對話容器
+            for i, conversation_container in enumerate(conversation_containers[:10]):  # 限制為前10個
                 try:
-                    interaction_info = {
-                        'timestamp': '',
-                        'author': '',
-                        'content': '',
-                        'type': '',
-                        'ltr_content': ''  # 新增：<div dir="ltr"> 的內容
-                    }
+                    # 尋找相關的時間戳和作者信息
+                    timestamp = ''
+                    author = ''
                     
-                    # 提取時間戳
-                    time_patterns = ['ago', '前', 'hours', 'days', 'minutes', '小時', '天', '分鐘']
-                    for pattern in time_patterns:
-                        time_elements = interaction.find_all(string=lambda text: text and pattern in text)
-                        if time_elements:
-                            interaction_info['timestamp'] = time_elements[0].strip()
-                            break
+                    # 在對話容器的父級或兄弟元素中尋找時間戳和作者
+                    parent_container = conversation_container.parent
+                    if parent_container:
+                        # 尋找時間戳
+                        time_patterns = ['ago', '前', 'hours', 'days', 'minutes', '小時', '天', '分鐘']
+                        for pattern in time_patterns:
+                            time_elements = parent_container.find_all(string=lambda text: text and pattern in text)
+                            if time_elements:
+                                timestamp = time_elements[0].strip()
+                                break
+                        
+                        # 尋找作者信息
+                        author_selectors = ['.author', '.user', '.name', '.username', '.by', '[data-test-id="user-name"]']
+                        for selector in author_selectors:
+                            author_element = parent_container.select_one(selector)
+                            if author_element:
+                                author = author_element.get_text(strip=True)
+                                break
                     
-                    # 提取作者
-                    author_selectors = ['.author', '.user', '.name', '.username', '.by']
-                    for selector in author_selectors:
-                        author_element = interaction.select_one(selector)
-                        if author_element:
-                            interaction_info['author'] = author_element.get_text(strip=True)
-                            break
+                    # 提取對話內容
+                    conversation_content = self.extract_conversation_content(conversation_container)
                     
-                    # 提取內容
-                    content_element = interaction.find(['p', 'div', 'span'])
-                    if content_element:
-                        interaction_info['content'] = content_element.get_text(strip=True)[:300]
-                    
-                    # 提取 <div dir="ltr"> 的內容
-                    ltr_div = interaction.find('div', attrs={'dir': 'ltr'})
-                    if ltr_div:
-                        ltr_content = ltr_div.get_text(strip=True)
-                        interaction_info['ltr_content'] = ltr_content[:500]  # 限制長度
-                        print(f"    📄 找到 LTR 內容: {ltr_content[:100]}...")
-                    else:
-                        # 如果當前互動容器中沒有，嘗試在整個頁面中尋找相關的 ltr_div
-                        # 這裡可以根據時間戳或其他標識來匹配
-                        pass
+                    # 提取 Jira 連結
+                    jira_links = self.extract_jira_links(conversation_content)
                     
                     # 判斷互動類型
-                    interaction_text = interaction.get_text(strip=True).lower()
-                    if 'customer' in interaction_text or '客戶' in interaction_text:
-                        interaction_info['type'] = 'customer_response'
-                    elif 'agent' in interaction_text or 'agent responded' in interaction_text:
-                        interaction_info['type'] = 'agent_response'
-                    elif 'created' in interaction_text or 'opened' in interaction_text:
-                        interaction_info['type'] = 'ticket_created'
-                    elif 'closed' in interaction_text or 'resolved' in interaction_text:
-                        interaction_info['type'] = 'ticket_closed'
-                    else:
-                        interaction_info['type'] = 'other'
+                    interaction_type = 'response'
+                    if conversation_content:
+                        content_lower = conversation_content.lower()
+                        if 'customer' in content_lower or '客戶' in content_lower:
+                            interaction_type = 'customer_response'
+                        elif 'agent' in content_lower or 'agent responded' in content_lower:
+                            interaction_type = 'agent_response'
+                        elif 'created' in content_lower or 'opened' in content_lower:
+                            interaction_type = 'ticket_created'
+                        elif 'closed' in content_lower or 'resolved' in content_lower:
+                            interaction_type = 'ticket_closed'
                     
-                    if interaction_info['timestamp'] or interaction_info['content'] or interaction_info['ltr_content']:
-                        interactions.append(interaction_info)
+                    interaction_info = {
+                        'timestamp': timestamp,
+                        'author': author,
+                        'content': conversation_content[:300],
+                        'type': interaction_type,
+                        'ltr_content': conversation_content[:2000],  # 增加長度限制
+                        'jira_links': jira_links
+                    }
+                    
+                    interactions.append(interaction_info)
+                    print(f"    📝 對話 {i+1}: {conversation_content[:100]}...")
+                    if jira_links:
+                        print(f"    🔗 找到 Jira 連結: {[link['ticket_id'] for link in jira_links]}")
                 
                 except Exception as e:
-                    logger.warning(f"提取互動信息失敗: {e}")
+                    logger.warning(f"處理對話容器失敗: {e}")
                     continue
             
-            # 如果沒有找到足夠的互動，直接處理 ltr_divs
-            if len(interactions) < len(ltr_divs):
-                print(f"  🔄 直接處理 {len(ltr_divs)} 個 LTR div...")
+            # 如果沒有找到對話容器，回退到舊的 LTR 方法
+            if not interactions:
+                print(f"  🔄 回退到 LTR 方法...")
+                ltr_divs = soup.find_all('div', attrs={'dir': 'ltr'})
+                print(f"  📝 找到 {len(ltr_divs)} 個 <div dir='ltr'> 標籤")
+                
                 for i, ltr_div in enumerate(ltr_divs[:10]):  # 限制為前10個
                     try:
                         # 尋找相關的時間戳（在 ltr_div 附近）
@@ -476,16 +551,23 @@ class ActivityScanner:
                                 author = author_element.get_text(strip=True)
                                 break
                         
+                        # 提取 LTR 內容
+                        ltr_content = self.extract_ltr_content(ltr_div)
+                        jira_links = self.extract_jira_links(ltr_content)
+                        
                         interaction_info = {
                             'timestamp': timestamp,
                             'author': author,
-                            'content': ltr_div.get_text(strip=True)[:300],
+                            'content': ltr_content[:300],
                             'type': 'response',
-                            'ltr_content': ltr_div.get_text(strip=True)[:500]
+                            'ltr_content': ltr_content[:1000],
+                            'jira_links': jira_links
                         }
                         
                         interactions.append(interaction_info)
-                        print(f"    📝 LTR {i+1}: {ltr_div.get_text(strip=True)[:100]}...")
+                        print(f"    📝 LTR {i+1}: {ltr_content[:100]}...")
+                        if jira_links:
+                            print(f"    🔗 找到 Jira 連結: {[link['ticket_id'] for link in jira_links]}")
                     
                     except Exception as e:
                         logger.warning(f"處理 LTR div 失敗: {e}")
@@ -619,13 +701,18 @@ class ActivityScanner:
             interactions_csv_file = f"{report_dir}/eservice_interactions_{timestamp}.csv"
             with open(interactions_csv_file, 'w', newline='', encoding='utf-8') as f:
                 writer = csv.writer(f)
-                writer.writerow(['Ticket_ID', 'Ticket_Title', 'Interaction_Timestamp', 'Author', 'Content', 'Type', 'LTR_Content'])
+                writer.writerow(['Ticket_ID', 'Ticket_Title', 'Interaction_Timestamp', 'Author', 'Content', 'Type', 'LTR_Content', 'Jira_Links'])
                 
                 for activity in activities:
                     ticket_id = activity.get('id', '')
                     ticket_title = activity.get('title', '')
                     
                     for interaction in activity.get('detailed_interactions', []):
+                        # 格式化 Jira 連結
+                        jira_links_text = ""
+                        if interaction.get('jira_links'):
+                            jira_links_text = "; ".join([f"{link['ticket_id']}({link['full_url']})" for link in interaction['jira_links']])
+                        
                         writer.writerow([
                             ticket_id,
                             ticket_title,
@@ -633,8 +720,30 @@ class ActivityScanner:
                             interaction.get('author', ''),
                             interaction.get('content', ''),
                             interaction.get('type', ''),
-                            interaction.get('ltr_content', '')
+                            interaction.get('ltr_content', ''),
+                            jira_links_text
                         ])
+            
+            # 生成 Jira 連結專用 CSV 報告
+            jira_links_csv_file = f"{report_dir}/eservice_jira_links_{timestamp}.csv"
+            with open(jira_links_csv_file, 'w', newline='', encoding='utf-8') as f:
+                writer = csv.writer(f)
+                writer.writerow(['Ticket_ID', 'Ticket_Title', 'Interaction_Timestamp', 'Jira_Ticket_ID', 'Jira_Full_URL', 'Context'])
+                
+                for activity in activities:
+                    ticket_id = activity.get('id', '')
+                    ticket_title = activity.get('title', '')
+                    
+                    for interaction in activity.get('detailed_interactions', []):
+                        for jira_link in interaction.get('jira_links', []):
+                            writer.writerow([
+                                ticket_id,
+                                ticket_title,
+                                interaction.get('timestamp', ''),
+                                jira_link.get('ticket_id', ''),
+                                jira_link.get('full_url', ''),
+                                jira_link.get('context', '')
+                            ])
             
             # 生成 Markdown 報告
             md_file = f"{report_dir}/eservice_activities_{timestamp}.md"
@@ -668,6 +777,10 @@ class ActivityScanner:
                                 f.write(f"  - 內容: {interaction.get('content', 'N/A')}\n")
                                 if interaction.get('ltr_content'):
                                     f.write(f"  - **回應訊息**: {interaction.get('ltr_content', 'N/A')}\n")
+                                if interaction.get('jira_links'):
+                                    f.write(f"  - **Jira 連結**:\n")
+                                    for jira_link in interaction['jira_links']:
+                                        f.write(f"    - {jira_link['ticket_id']}: {jira_link['full_url']}\n")
                                 f.write("  \n")
                         else:
                             f.write("- **互動記錄**: 無\n")
@@ -681,6 +794,7 @@ class ActivityScanner:
             print(f"   📄 JSON: {json_file}")
             print(f"   📊 CSV: {csv_file}")
             print(f"   💬 互動 CSV: {interactions_csv_file}")
+            print(f"   🔗 Jira 連結 CSV: {jira_links_csv_file}")
             print(f"   📝 Markdown: {md_file}")
             
         except Exception as e:
